@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from pathlib import Path
 
 DEFAULT_PATH = Path.home() / ".rechnungs-tinder-einstellungen.json"
@@ -14,6 +15,8 @@ DEFAULTS = {
     "bewilligt_ordner": "Bewilligt",
     "abgelehnt_ordner": "Abgelehnt",
     "letzte_ordner": [],
+    # Netzwerk-Modus: nur diese Ordner (samt Unterordnern) sind vom Smartphone aus erreichbar.
+    "freigaben": [],
 }
 
 
@@ -49,3 +52,25 @@ class Settings:
         recent = [p for p in self.data.get("letzte_ordner", []) if p != folder]
         self.data["letzte_ordner"] = [folder, *recent][:MAX_RECENT]
         self.save()
+
+    @property
+    def shares(self) -> list[str]:
+        return [p for p in self.data.get("freigaben", []) if isinstance(p, str) and p.strip()]
+
+    def pin(self, create: bool = False) -> str | None:
+        """PIN für die Anmeldung im Netzwerk; wird bei Bedarf einmalig erzeugt."""
+        pin = str(self.data.get("pin") or "").strip()
+        if not pin and create:
+            pin = f"{secrets.randbelow(10**6):06d}"
+            self.data["pin"] = pin
+            self.save()
+        return pin or None
+
+    def secret(self) -> str:
+        """Geheimer Schlüssel zum Signieren der Anmelde-Tokens (bleibt über Neustarts gleich)."""
+        secret = str(self.data.get("geheimschluessel") or "")
+        if len(secret) < 32:
+            secret = secrets.token_urlsafe(32)
+            self.data["geheimschluessel"] = secret
+            self.save()
+        return secret

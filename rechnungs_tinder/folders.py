@@ -78,11 +78,21 @@ def shortcuts() -> list[dict]:
     return [{"name": label, "pfad": str(path)} for label, path in entries]
 
 
-def browse(path: str | None) -> dict:
-    """Listet die Unterordner eines Ordners für den eingebauten Browser."""
+def is_within(path: Path, roots: list[Path]) -> bool:
+    return any(path == root or root in path.parents for root in roots)
+
+
+def browse(path: str | None, roots: list[Path] | None = None) -> dict:
+    """Listet die Unterordner eines Ordners für den eingebauten Browser.
+
+    Mit ``roots`` (Netzwerk-Modus) sind nur diese Ordner und ihre Unterordner sichtbar.
+    """
     if not path:
-        return {"pfad": None, "oben": None, "ordner": shortcuts(), "pdfs": 0}
+        start = [{"name": r.name or str(r), "pfad": str(r)} for r in roots] if roots else shortcuts()
+        return {"pfad": None, "oben": None, "ordner": start, "pdfs": 0}
     folder = Path(path).expanduser().resolve()
+    if roots and not is_within(folder, roots):
+        raise PermissionError(path)
     if not folder.is_dir():
         raise FileNotFoundError(path)
     dirs = []
@@ -97,9 +107,8 @@ def browse(path: str | None) -> dict:
         pass
     dirs.sort(key=lambda d: d["name"].casefold())
     parent = folder.parent
-    return {
-        "pfad": str(folder),
-        "oben": str(parent) if parent != folder else "",
-        "ordner": dirs,
-        "pdfs": _count_pdfs(folder),
-    }
+    if parent == folder or (roots and not is_within(parent, roots)):
+        up = ""  # zurück zur Übersicht der Startpunkte
+    else:
+        up = str(parent)
+    return {"pfad": str(folder), "oben": up, "ordner": dirs, "pdfs": _count_pdfs(folder)}

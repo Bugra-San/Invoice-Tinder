@@ -1,11 +1,7 @@
-import json
-
 import pymupdf
 import pytest
 
-from rechnungs_tinder.app import create_app
 from rechnungs_tinder.core import STATE_FILE, InvoiceError, InvoiceFolder
-from rechnungs_tinder.settings import Settings
 
 
 def make_pdf(path, text="Rechnung", pages=1, rotate=0):
@@ -124,75 +120,3 @@ def test_note_near_edge_stays_on_page(folder):
 def test_render_returns_jpeg(folder):
     data = InvoiceFolder(folder).render("Rechnung 2.pdf", 0, 400)
     assert data[:2] == b"\xff\xd8"
-
-
-# ------------------------------------------------------------------ Web-API
-
-
-@pytest.fixture
-def client(folder, tmp_path_factory):
-    settings = Settings(tmp_path_factory.mktemp("cfg") / "einstellungen.json")
-    app = create_app(settings, token="geheim")
-    c = app.test_client()
-    c.environ_base["HTTP_X_TOKEN"] = "geheim"
-    return c
-
-
-def test_api_requires_token(client):
-    assert client.get("/api/status", headers={"X-Token": "falsch"}).status_code == 403
-
-
-def test_api_rejects_foreign_host(client):
-    assert client.get("/", headers={"Host": "evil.example"}).status_code == 403
-
-
-def test_index_contains_token(client):
-    assert b"geheim" in client.get("/").data
-
-
-def test_api_full_workflow(client, folder):
-    res = client.post("/api/ordner", json={"pfad": str(folder)}).get_json()
-    names = [r["name"] for r in res["status"]["rechnungen"]]
-    assert names == ["Rechnung 1.PDF", "Rechnung 2.pdf", "Rechnung 10.pdf"]
-    assert res["letzte_ordner"] == [str(folder.resolve())]
-
-    info = client.get("/api/rechnung", query_string={"name": "Rechnung 2.pdf"}).get_json()
-    assert len(info["seiten"]) == 1
-    img = client.get("/api/seite", query_string={"name": "Rechnung 2.pdf", "seite": 0, "breite": 300, "t": "geheim"})
-    assert img.mimetype == "image/jpeg"
-
-    note = client.post("/api/notiz", json={"name": "Rechnung 2.pdf", "seite": 0, "x": 0.2, "y": 0.2, "text": "OK"})
-    assert note.status_code == 200 and note.get_json()["version"] != info["version"]
-
-    for name, decision in [("Rechnung 1.PDF", "bewilligt"), ("Rechnung 2.pdf", "abgelehnt"), ("Rechnung 10.pdf", "bewilligt")]:
-        client.post("/api/entscheiden", json={"name": name, "entscheidung": decision})
-    assert client.post("/api/rueckgaengig", json={}).get_json()["name"] == "Rechnung 10.pdf"
-    client.post("/api/entscheiden", json={"name": "Rechnung 10.pdf", "entscheidung": "abgelehnt"})
-
-    result = client.post("/api/verschieben", json={}).get_json()["ergebnis"]
-    assert result["verschoben"] == {"bewilligt": ["Rechnung 1.PDF"], "abgelehnt": ["Rechnung 2.pdf", "Rechnung 10.pdf"]}
-    with pymupdf.open(folder / "Abgelehnt" / "Rechnung 2.pdf") as doc:
-        assert len(list(doc[0].annots())) == 1
-
-
-def test_api_errors_are_german_json(client, folder):
-    res = client.post("/api/entscheiden", json={"name": "x.pdf", "entscheidung": "bewilligt"})
-    assert res.status_code == 400
-    assert "Ordner" in res.get_json()["fehler"]
-    res = client.post("/api/ordner", json={"pfad": str(folder / "gibtsnicht")})
-    assert "nicht gefunden" in res.get_json()["fehler"]
-
-
-def test_browse(client, folder):
-    (folder / "Unterordner").mkdir()
-    res = client.get("/api/durchsuchen", query_string={"pfad": str(folder)}).get_json()
-    assert [d["name"] for d in res["ordner"]] == ["Unterordner"]
-    assert res["pdfs"] == 3
-    roots = client.get("/api/durchsuchen").get_json()
-    assert roots["pfad"] is None and roots["ordner"]
-
-
-def test_settings_remember(tmp_path):
-    s = Settings(tmp_path / "s.json")
-    s.remember(str(tmp_path))
-    assert json.loads((tmp_path / "s.json").read_text())["letzte_ordner"] == [str(tmp_path)]

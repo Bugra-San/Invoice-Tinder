@@ -7,6 +7,8 @@
 const $ = (id) => document.getElementById(id);
 
 const S = {
+  token: null,         // Zugangsschlüssel für die API
+  network: false,      // Server läuft im Netzwerk-Modus (Anmeldung mit PIN)
   status: null,        // Status des geöffneten Ordners (vom Server)
   recent: [],
   nativeDialog: false,
@@ -16,10 +18,23 @@ const S = {
   annots: {},          // Dateiname -> [{seite, xref}] (für "Notiz löschen")
 };
 
+/* ------------------------------------------------------------ Speicher */
+
+// Im privaten Modus (z. B. Safari) kann der Speicher fehlen – dann eben ohne.
+const store = {
+  get(key) { try { return localStorage.getItem(key); } catch (e) { return null; } },
+  set(key, value) {
+    try { value == null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch (e) { /* egal */ }
+  },
+};
+
 /* ---------------------------------------------------------------- Server */
 
+class AuthNeeded extends Error {}
+
 async function api(path, data) {
-  const opts = { headers: { "X-Token": window.TOKEN } };
+  const opts = { headers: {} };
+  if (S.token) opts.headers.Authorization = "Bearer " + S.token;
   if (data !== undefined) {
     opts.method = "POST";
     opts.headers["Content-Type"] = "application/json";
@@ -27,25 +42,41 @@ async function api(path, data) {
   }
   let res;
   try {
-    res = await fetch("/api/" + path, opts);
+    res = await fetch("/api/v1/" + path, opts);
   } catch (e) {
-    throw new Error("Keine Verbindung zum Programm. Läuft das Programm-Fenster noch?");
+    throw new Error(S.network
+      ? "Keine Verbindung zum Computer. Ist das WLAN an und läuft das Programm noch?"
+      : "Keine Verbindung zum Programm. Läuft das Programm-Fenster noch?");
   }
   let json = null;
   try { json = await res.json(); } catch (e) { /* keine JSON-Antwort */ }
+  if (res.status === 401 && json && json.code === "anmeldung") {
+    setToken(null);
+    showLogin();
+    throw new AuthNeeded(json.fehler);
+  }
   if (!res.ok) throw new Error((json && json.fehler) || "Es ist ein Fehler aufgetreten.");
   return json;
 }
 
+function setToken(token) {
+  S.token = token;
+  if (S.network) store.set("token", token);
+}
+
+function folderPath() { return S.status ? S.status.ordner : null; }
+
 function pageUrl(name, page, width, version) {
-  const q = new URLSearchParams({ name, seite: page, breite: width, v: version, t: window.TOKEN });
-  return "/api/seite?" + q.toString();
+  const q = new URLSearchParams({ ordner: folderPath(), name, seite: page, breite: width, v: version, t: S.token });
+  return "/api/v1/seite?" + q.toString();
 }
 
 function applyStatus(payload) {
-  S.status = payload.status;
-  S.recent = payload.letzte_ordner || [];
-  S.nativeDialog = !!payload.systemdialog;
+  if ("status" in payload) {
+    S.status = payload.status;
+    store.set("ordner", S.status ? S.status.ordner : null);
+  }
+  if (payload.letzte_ordner) S.recent = payload.letzte_ordner;
 }
 
 async function withBusy(fn) {
@@ -53,7 +84,7 @@ async function withBusy(fn) {
   try {
     return await fn();
   } catch (e) {
-    toast(e.message, "error", 5000);
+    if (!(e instanceof AuthNeeded)) toast(e.message, "error", 5000);
   } finally {
     clearTimeout(timer);
     $("busy").hidden = true;
@@ -90,6 +121,26 @@ function route(justOpened = false) {
   }
   if (openInvoices().length > 0) return showSwipe();
   showDone();
+}
+
+/* ------------------------------------------------------------- Anmelden */
+
+function showLogin() {
+  show("screen-login");
+  $("pin").value = "";
+  setTimeout(() => $("pin").focus(), 50);
+}
+
+async function login(e) {
+  e.preventDefault();
+  const pin = $("pin").value.trim();
+  if (!pin) return;
+  await withBusy(async () => {
+    const res = await api("anmelden", { pin });
+    $("toast").hidden = true;
+    setToken(res.token);
+    await start();
+  });
 }
 
 /* -------------------------------------------------------------- Startseite */
@@ -255,14 +306,14 @@ async function decide(decision) {
   card.style.opacity = "0";
   try {
     const [res] = await Promise.all([
-      api("entscheiden", { name: inv.name, entscheidung: decision }),
+      api("entscheiden", { ordner: folderPath(), name: inv.name, entscheidung: decision }),
       new Promise((r) => setTimeout(r, 300)),
     ]);
     applyStatus(res);
     toast(yes ? "✓ Bewilligt" : "✗ Abgelehnt", yes ? "ok" : "no", 1200);
   } catch (e) {
     toast(e.message, "error", 5000);
-    try { applyStatus(await api("status")); } catch (e2) { /* bleibt beim alten Stand */ }
+    try { await reloadFolder(); } catch (e2) { /* bleibt beim alten Stand */ }
   } finally {
     S.deciding = false;
     route();
@@ -271,7 +322,7 @@ async function decide(decision) {
 
 async function undoDecision() {
   await withBusy(async () => {
-    const res = await api("rueckgaengig", {});
+    const res = await api("rueckgaengig", { ordner: folderPath() });
     applyStatus(res);
     if (res.name) toast(`„${res.name}“ ist wieder offen.`, "", 2500);
     route();
@@ -287,7 +338,8 @@ async function openDetail() {
   const inv = currentInvoice();
   if (!inv) return;
   await withBusy(async () => {
-    const info = await api("rechnung?name=" + encodeURIComponent(inv.name));
+    const q = new URLSearchParams({ ordner: folderPath(), name: inv.name });
+    const info = await api("rechnung?" + q.toString());
     S.detail = { name: inv.name, info, version: info.version, zoom: 1, mode: null, loaded: [] };
     S.annots[inv.name] = S.annots[inv.name] || [];
     show("screen-detail");
@@ -306,7 +358,10 @@ function closeDetail() {
 }
 
 function baseWidth() {
-  return Math.max(200, Math.min($("pages").clientWidth - 32, 1100));
+  const box = $("pages");
+  const cs = getComputedStyle(box);
+  const inner = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  return Math.max(150, Math.min(inner, 1100));
 }
 
 function buildPages() {
@@ -424,9 +479,31 @@ function initZoomGestures() {
     const [x, y] = mid(e.touches);
     setZoom(pinch.z * (dist(e.touches) / pinch.d), x, y);
   }, { passive: false });
-  box.addEventListener("touchend", (e) => { if (e.touches.length < 2) pinch = null; });
+  box.addEventListener("touchend", (e) => {
+    if (e.touches.length < 2) pinch = null;
+  });
 
-  window.addEventListener("resize", () => { if (S.detail) layoutPages(); });
+  // Doppelt tippen: vergrößern bzw. wieder auf Bildschirmbreite.
+  let lastTap = null;
+  box.addEventListener("pointerup", (e) => {
+    if (!S.detail || S.detail.mode || e.pointerType !== "touch") return;
+    const now = Date.now();
+    if (lastTap && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
+      setZoom(S.detail.zoom < 1.5 ? 2.5 : 1, e.clientX, e.clientY);
+      lastTap = null;
+    } else {
+      lastTap = { t: now, x: e.clientX, y: e.clientY };
+    }
+  });
+
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (S.detail) layoutPages();
+      else if (!$("screen-swipe").hidden && currentInvoice()) showSwipe(); // z. B. Handy gedreht
+    }, 200);
+  });
 }
 
 /* ------------------------------------------------------------ Anmerkungen */
@@ -462,7 +539,7 @@ function onPageClick(e, page, div) {
     if (dialog.returnValue !== "ok" || !text.value.trim()) return;
     const d = S.detail;
     await withBusy(async () => {
-      const res = await api("notiz", { name: d.name, seite: page, x, y, text: text.value });
+      const res = await api("notiz", { ordner: folderPath(), name: d.name, seite: page, x, y, text: text.value });
       rememberAnnot(d, page, res);
       setMode(null);
       toast("✔ Notiz gespeichert", "ok");
@@ -500,7 +577,7 @@ function initDrawing(canvas, page) {
     stroke = null;
     const d = S.detail;
     try {
-      const res = await api("zeichnung", { name: d.name, seite: page, striche: [pts] });
+      const res = await api("zeichnung", { ordner: folderPath(), name: d.name, seite: page, striche: [pts] });
       rememberAnnot(d, page, res);
     } catch (err) {
       toast(err.message, "error", 5000);
@@ -541,7 +618,7 @@ async function undoAnnot() {
   if (!list.length) return;
   const last = list[list.length - 1];
   await withBusy(async () => {
-    const res = await api("anmerkung-loeschen", { name: d.name, seite: last.seite, xref: last.xref });
+    const res = await api("anmerkung-loeschen", { ordner: folderPath(), name: d.name, seite: last.seite, xref: last.xref });
     list.pop();
     fileChanged(d, last.seite, res.version);
     toast("Letzte Notiz gelöscht");
@@ -573,7 +650,7 @@ function showDone() {
 
 async function moveAll() {
   await withBusy(async () => {
-    const res = await api("verschieben", {});
+    const res = await api("verschieben", { ordner: folderPath() });
     applyStatus(res);
     const r = res.ergebnis;
     const yes = r.verschoben.bewilligt.length;
@@ -635,13 +712,41 @@ function init() {
     }
   });
 
+  $("login-form").onsubmit = login;
+
   initSwipe();
   initZoomGestures();
+  withBusy(start);
+}
 
-  withBusy(async () => {
-    applyStatus(await api("status"));
-    route();
-  });
+async function reloadFolder() {
+  const q = new URLSearchParams({ pfad: folderPath() });
+  applyStatus(await api("ordner?" + q.toString()));
+}
+
+async function start() {
+  const info = await api("info");
+  S.network = info.netzwerk;
+  if (!info.angemeldet) {
+    // Lokal liefert die Startseite den Schlüssel mit, im Netzwerk ist er gespeichert.
+    S.token = window.TOKEN && window.TOKEN !== "__TOKEN__" ? window.TOKEN : store.get("token");
+    const again = S.token ? await api("info") : info;
+    if (!again.angemeldet) return info.netzwerk ? showLogin() : toast("Bitte das Programm neu starten.", "error", 8000);
+    Object.assign(info, again);
+  }
+  S.recent = info.letzte_ordner || [];
+  S.nativeDialog = !!info.systemdialog;
+  const saved = store.get("ordner");
+  if (saved && !S.status) {
+    try {
+      const q = new URLSearchParams({ pfad: saved });
+      applyStatus(await api("ordner?" + q.toString()));
+    } catch (e) {
+      if (e instanceof AuthNeeded) return;
+      store.set("ordner", null);
+    }
+  }
+  route();
 }
 
 init();

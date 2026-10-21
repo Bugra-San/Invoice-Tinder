@@ -14,6 +14,7 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 ".venv\Scripts\python.exe" -m rechnungs_tinder %*
+if errorlevel 1 pause
 goto :eof
 
 :fehler

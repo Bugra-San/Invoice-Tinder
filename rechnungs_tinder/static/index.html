@@ -4,15 +4,36 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Rechnungen prüfen</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%BE%3C/text%3E%3C/svg%3E">
+  <meta name="theme-color" content="#1f4e8c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Rechnungen">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
   <link rel="stylesheet" href="/static/app.css">
   <script>window.TOKEN = "__TOKEN__";</script>
   <script src="/static/app.js" defer></script>
 </head>
 <body>
 
+<!-- 0. Anmelden (nur im Netzwerk-Modus, z. B. am Smartphone) -->
+<section id="screen-login" class="screen" hidden>
+  <div class="center-box">
+    <h1>Rechnungen prüfen</h1>
+    <p class="lead">Bitte geben Sie die PIN ein.<br>Sie steht im Programm-Fenster auf dem Computer.</p>
+    <form id="login-form">
+      <input id="pin" class="pin-input" inputmode="numeric" autocomplete="off" maxlength="12"
+             placeholder="PIN" aria-label="PIN">
+      <button class="btn btn-green btn-huge" type="submit">✔ Anmelden</button>
+    </form>
+  </div>
+</section>
+
 <!-- 1. Start: Ordner auswählen -->
-<section id="screen-start" class="screen">
+<section id="screen-start" class="screen" hidden>
   <div class="center-box">
     <h1>Rechnungen prüfen</h1>
     <p class="lead">Wählen Sie den Ordner, in dem die Rechnungen liegen.</p>
@@ -45,12 +66,12 @@
 <!-- 3. Wischen -->
 <section id="screen-swipe" class="screen" hidden>
   <header class="bar">
-    <button id="btn-change-folder" class="btn btn-grey">📂 Anderer Ordner</button>
+    <button id="btn-change-folder" class="btn btn-grey btn-icon"><b>📂</b><span>Ordner</span></button>
     <div class="bar-title">
       <div id="progress-text">Rechnung 1 von 1</div>
       <div class="progress"><div id="progress-bar"></div></div>
     </div>
-    <button id="btn-undo" class="btn btn-grey">↶ Zurück</button>
+    <button id="btn-undo" class="btn btn-grey btn-icon"><b>↶</b><span>Zurück</span></button>
   </header>
 
   <main class="card-area">
@@ -69,35 +90,35 @@
     </div>
     <div class="hint hint-right">Bewilligen ➡</div>
   </main>
+  <p class="swipe-help">⬅ Ablehnen · wischen · Bewilligen ➡</p>
 
   <footer class="actions">
-    <button id="btn-no" class="btn btn-red btn-action">✗<span>Ablehnen</span></button>
-    <button id="btn-view" class="btn btn-blue btn-action">🔍<span>Ansehen &amp; Notiz</span></button>
-    <button id="btn-yes" class="btn btn-green btn-action">✓<span>Bewilligen</span></button>
+    <button id="btn-no" class="btn btn-red btn-action"><b>✗</b><span>Ablehnen</span></button>
+    <button id="btn-view" class="btn btn-blue btn-action"><b>🔍</b><span>Ansehen</span></button>
+    <button id="btn-yes" class="btn btn-green btn-action"><b>✓</b><span>Bewilligen</span></button>
   </footer>
 </section>
 
 <!-- 4. Detailansicht: Zoom und Anmerkungen -->
 <section id="screen-detail" class="screen" hidden>
-  <header class="bar toolbar">
-    <button id="detail-close" class="btn btn-grey">⬅ Zurück</button>
-    <div class="tool-group">
-      <button id="zoom-out" class="btn btn-grey btn-square" aria-label="Verkleinern">－</button>
-      <span id="zoom-label" class="zoom-label">100 %</span>
-      <button id="zoom-in" class="btn btn-grey btn-square" aria-label="Vergrößern">＋</button>
-    </div>
-    <div class="tool-group">
-      <button id="tool-note" class="btn btn-yellow">✎ Notiz</button>
-      <button id="tool-draw" class="btn btn-yellow">🖊 Zeichnen</button>
-      <button id="annot-undo" class="btn btn-grey" disabled>↶ Notiz löschen</button>
-    </div>
+  <header class="bar">
+    <button id="detail-close" class="btn btn-grey btn-icon"><b>⬅</b><span>Zurück</span></button>
+    <div id="detail-name" class="bar-title detail-name"></div>
   </header>
   <div id="tool-hint" class="tool-hint" hidden></div>
   <div id="pages" class="pages"></div>
+  <nav class="tools" aria-label="Werkzeuge">
+    <button id="zoom-out" class="btn btn-grey btn-tool" aria-label="Verkleinern"><b>－</b><span>Kleiner</span></button>
+    <span id="zoom-label" class="zoom-label">100 %</span>
+    <button id="zoom-in" class="btn btn-grey btn-tool" aria-label="Vergrößern"><b>＋</b><span>Größer</span></button>
+    <span class="tools-gap"></span>
+    <button id="tool-note" class="btn btn-yellow btn-tool"><b>✎</b><span>Notiz</span></button>
+    <button id="tool-draw" class="btn btn-yellow btn-tool"><b>🖊</b><span>Zeichnen</span></button>
+    <button id="annot-undo" class="btn btn-grey btn-tool" disabled><b>↶</b><span>Löschen</span></button>
+  </nav>
   <footer class="actions">
-    <button id="detail-no" class="btn btn-red btn-action">✗<span>Ablehnen</span></button>
-    <div id="detail-name" class="detail-name"></div>
-    <button id="detail-yes" class="btn btn-green btn-action">✓<span>Bewilligen</span></button>
+    <button id="detail-no" class="btn btn-red btn-action"><b>✗</b><span>Ablehnen</span></button>
+    <button id="detail-yes" class="btn btn-green btn-action"><b>✓</b><span>Bewilligen</span></button>
   </footer>
 </section>
 
