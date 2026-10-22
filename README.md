@@ -32,7 +32,21 @@ Wird das Programm zwischendurch geschlossen, geht es beim nächsten Mal an derse
 Gibt es im Zielordner schon eine Datei mit gleichem Namen, wird nichts überschrieben, sondern
 z. B. `Rechnung (2).pdf` angelegt.
 
-## Installation und Start
+## Auf dem Server betreiben (empfohlen für Firmen)
+
+Rechnungs-Tinder läuft als Dienst auf dem eigenen Server – als **Docker-Container** (Linux-Server,
+Synology/QNAP-NAS) oder als **RechnungsTinder.exe** (Windows-Server, ohne Python). Die
+Rechnungen kommen direkt aus einem NAS-Ordner; alle Mitarbeiter öffnen das Programm im Browser
+unter `http://<server>:8765` und melden sich mit der PIN an.
+
+```sh
+cp .env.beispiel .env          # PIN und NAS-Zugang eintragen
+docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d --build
+```
+
+Schritt-für-Schritt-Anleitung für alle Varianten: **[docs/SERVER.md](docs/SERVER.md)**
+
+## Installation und Start auf einem einzelnen PC
 
 Voraussetzung: [Python 3.10 oder neuer](https://www.python.org/downloads/)
 (unter Windows bei der Installation „Add Python to PATH“ anhaken).
@@ -113,7 +127,9 @@ eingetragen bzw. erzeugt).
 
 ## Technik
 
-- Python-Programm (Flask). Standardmäßig nur auf dem eigenen Rechner erreichbar (`127.0.0.1`),
+- Python-Programm (Flask, im Serverbetrieb mit dem Webserver *waitress*), ausgeliefert als
+  Docker-Image (`Dockerfile`, `docker-compose.yml`) oder als einzelne Windows-Datei
+  (`packaging/RechnungsTinder.spec`, wird von GitHub Actions automatisch gebaut). Standardmäßig nur auf dem eigenen Rechner erreichbar (`127.0.0.1`),
   im Netzwerk-Modus mit PIN-Anmeldung, signierten Zugangs-Tokens, Sperre nach mehreren falschen
   PIN-Eingaben und Beschränkung auf die freigegebenen Ordner.
 - Schnittstelle für Browser und Apps: `/api/v1` ([docs/API.md](docs/API.md)).

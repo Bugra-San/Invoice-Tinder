@@ -1,0 +1,33 @@
+# Rechnungs-Tinder auf dem eigenen Server
+#
+#   1. .env.beispiel nach .env kopieren und ausfüllen
+#   2. docker compose up -d
+#   3. im Browser:  http://<server>:8765   (PIN aus der .env)
+#
+# Die Rechnungen kommen aus RECHNUNGEN_ORDNER auf dem Server. Das kann ein normaler Ordner sein,
+# eine auf dem Server eingebundene NAS-Freigabe (z. B. /mnt/nas/rechnungen) oder – läuft der
+# Container direkt auf dem NAS – der Ordner dort (z. B. /volume1/Rechnungen).
+# Die NAS-Freigabe direkt per SMB einbinden: siehe docker-compose.nas.yml.
+
+services:
+  rechnungs-tinder:
+    build: .
+    image: rechnungs-tinder:latest
+    container_name: rechnungs-tinder
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8765}:8765"
+    # Benutzer-/Gruppen-ID, mit der Dateien gelesen, geändert und verschoben werden.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      RT_PIN: "${PIN:?Bitte in der Datei .env eine PIN festlegen}"
+      RT_BEWILLIGT: "${ORDNER_BEWILLIGT:-Bewilligt}"
+      RT_ABGELEHNT: "${ORDNER_ABGELEHNT:-Abgelehnt}"
+      RT_PROXY: "${HINTER_PROXY:-0}"
+      TZ: "${TZ:-Europe/Berlin}"
+    volumes:
+      - daten:/daten
+      - "${RECHNUNGEN_ORDNER:-./rechnungen}:/rechnungen"
+
+volumes:
+  daten:

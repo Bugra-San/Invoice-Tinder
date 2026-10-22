@@ -1,0 +1,21 @@
+# Zusatz: NAS-Freigabe direkt per SMB/CIFS in den Container einbinden
+# (der Server muss die Freigabe dann nicht selbst einbinden).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d
+#
+# Benötigt auf dem Server das Paket "cifs-utils" (Debian/Ubuntu: apt install cifs-utils).
+# Zugangsdaten stehen in der .env (NAS_ADRESSE, NAS_FREIGABE, NAS_BENUTZER, NAS_PASSWORT).
+
+services:
+  rechnungs-tinder:
+    volumes:
+      - daten:/daten
+      - nas-rechnungen:/rechnungen
+
+volumes:
+  nas-rechnungen:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//${NAS_ADRESSE:?NAS_ADRESSE fehlt in .env}/${NAS_FREIGABE:?NAS_FREIGABE fehlt in .env}"
+      o: "addr=${NAS_ADRESSE},username=${NAS_BENUTZER},password=${NAS_PASSWORT},uid=${PUID:-1000},gid=${PGID:-1000},file_mode=0664,dir_mode=0775,vers=${SMB_VERSION:-3.0}"

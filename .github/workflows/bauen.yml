@@ -1,0 +1,83 @@
+name: Testen und bauen
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Release-Dateien anhängen
+  packages: write   # Docker-Image in die GitHub Container Registry
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest -q
+
+  windows-exe:
+    needs: tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pyinstaller pillow
+      - run: pyinstaller --noconfirm packaging/RechnungsTinder.spec
+      - name: Kurztest der .exe
+        shell: pwsh
+        run: |
+          $argList = @("--server", "--ordner", $env:RUNNER_TEMP, "--pin", "1234", "--port", "8799",
+                    "--einstellungen", "$env:RUNNER_TEMP\einstellungen.json")
+          $p = Start-Process dist\RechnungsTinder.exe -ArgumentList $argList -PassThru
+          Start-Sleep -Seconds 10
+          $info = Invoke-RestMethod http://127.0.0.1:8799/api/v1/info
+          $login = Invoke-RestMethod -Method Post -ContentType "application/json" -Body '{"pin":"1234"}' http://127.0.0.1:8799/api/v1/anmelden
+          Stop-Process -Id $p.Id
+          if ($info.app -ne "Rechnungs-Tinder" -or -not $login.token) { throw "Kurztest fehlgeschlagen" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RechnungsTinder-Windows
+          path: dist/RechnungsTinder.exe
+      - name: An Release anhängen
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/RechnungsTinder.exe
+
+  docker:
+    needs: tests
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

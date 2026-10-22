@@ -3,3 +3,8 @@ __pycache__/
 .venv/
 .pytest_cache/
 .rechnungs-tinder.json
+.env
+rechnungen/
+dist/
+build/
+*.spec.bak

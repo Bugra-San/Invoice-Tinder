@@ -9,16 +9,20 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
-_NATIVE_DIALOG = r"""
-import sys, tkinter
-from tkinter import filedialog
-root = tkinter.Tk()
-root.withdraw()
-root.attributes("-topmost", True)
-path = filedialog.askdirectory(title="Ordner mit Rechnungen auswählen", initialdir=sys.argv[1] or None)
-root.destroy()
-sys.stdout.write(path or "")
-"""
+DIALOG_FLAG = "--ordner-dialog"
+
+
+def run_native_dialog(initial: str) -> None:
+    """Zeigt das Ordner-Fenster und gibt den gewählten Pfad auf stdout aus."""
+    import tkinter
+    from tkinter import filedialog
+
+    root = tkinter.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    path = filedialog.askdirectory(title="Ordner mit Rechnungen auswählen", initialdir=initial or None)
+    root.destroy()
+    sys.stdout.write(path or "")
 
 
 @lru_cache(maxsize=1)
@@ -36,12 +40,11 @@ def pick_with_native_dialog(initial: str = "") -> str | None:
     """Öffnet den normalen Ordner-Dialog des Betriebssystems (in eigenem Prozess)."""
     if not native_dialog_available():
         return None
-    result = subprocess.run(
-        [sys.executable, "-c", _NATIVE_DIALOG, initial],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
+    if getattr(sys, "frozen", False):  # als .exe gepackt: die .exe selbst übernimmt den Dialog
+        cmd, cwd = [sys.executable, DIALOG_FLAG, initial], None
+    else:
+        cmd, cwd = [sys.executable, "-m", "rechnungs_tinder", DIALOG_FLAG, initial], Path(__file__).parent.parent
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", cwd=cwd)
     path = result.stdout.strip()
     return str(Path(path).resolve()) if path else None
 
