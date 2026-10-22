@@ -7,7 +7,8 @@
 # Die Rechnungen kommen aus RECHNUNGEN_ORDNER auf dem Server. Das kann ein normaler Ordner sein,
 # eine auf dem Server eingebundene NAS-Freigabe (z. B. /mnt/nas/rechnungen) oder – läuft der
 # Container direkt auf dem NAS – der Ordner dort (z. B. /volume1/Rechnungen).
-# Die NAS-Freigabe direkt per SMB einbinden: siehe docker-compose.nas.yml.
+# Ubuntu-Server + NAS: am einfachsten mit  sudo ./installieren-ubuntu.sh  (bindet das NAS ein).
+# Die NAS-Freigabe stattdessen direkt per SMB im Container einbinden: siehe docker-compose.nas.yml.
 
 services:
   rechnungs-tinder:
@@ -27,7 +28,10 @@ services:
       TZ: "${TZ:-Europe/Berlin}"
     volumes:
       - daten:/daten
-      - "${RECHNUNGEN_ORDNER:-./rechnungen}:/rechnungen"
+      # Ordner muss existieren (wird nicht automatisch angelegt).
+      - type: bind
+        source: "${RECHNUNGEN_ORDNER:-./rechnungen}"
+        target: /rechnungen
 
 volumes:
   daten:

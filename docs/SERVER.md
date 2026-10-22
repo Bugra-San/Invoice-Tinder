@@ -9,56 +9,121 @@ Es gibt drei Wege. Welcher passt, hängt vom Server ab:
 
 | Server | Weg |
 |---|---|
-| Linux-Server (Ubuntu, Debian, …) oder Windows-Server mit Docker | **A – Docker** (empfohlen) |
-| Synology- oder QNAP-NAS mit „Container Manager“ / „Container Station“ | **B – direkt auf dem NAS** |
+| **Ubuntu-Server, Rechnungen auf einer Synology** (auch ältere DSM-Versionen ohne Docker) | **A – Installationsskript** (empfohlen) |
+| Synology/QNAP-NAS mit „Container Manager“ / „Container Station“ (ohne extra Server) | **B – direkt auf dem NAS** |
 | Windows-Server ohne Docker | **C – RechnungsTinder.exe** |
 
----
+Bei Weg A läuft das Programm auf dem Ubuntu-Server. Die Synology stellt nur den Ordner per
+Windows-Dateifreigabe (SMB) bereit – auf dem NAS muss dafür **kein Docker** laufen.
 
-## Vorbereitung auf dem NAS (für alle Wege)
-
-1. Freigegebenen Ordner für die Rechnungen anlegen, z. B. `Rechnungen`.
-   Unterordner (z. B. `2026-10`, `Firma X`) sind später in der App auswählbar.
-2. Einen eigenen NAS-Benutzer anlegen, z. B. `rechnungen`, mit **Lesen und Schreiben** auf diese
-   Freigabe (Schreiben ist nötig für Notizen und das Verschieben nach *Bewilligt*/*Abgelehnt*).
-3. Notieren: IP-Adresse des NAS (z. B. `192.168.1.10`), Name der Freigabe, Benutzer, Passwort.
+```
+ PC / Tablet / Smartphone ──Browser──▶ Ubuntu-Server (Rechnungs-Tinder) ──SMB──▶ Synology (Ordner „Rechnungen“)
+```
 
 ---
 
-## A – Docker auf einem Linux-Server (empfohlen)
+## Synology vorbereiten
 
-**1. Docker installieren** (einmalig, Ubuntu/Debian):
+Die Menüs heißen je nach DSM-Version etwas anders; beide Varianten sind angegeben.
+
+**1. SMB-Dienst einschalten**
+- DSM 6/7: *Systemsteuerung → Dateidienste → SMB* → „SMB-Dienst aktivieren“.
+- DSM 5: *Systemsteuerung → Win/Mac/NFS → Windows-Dateidienst aktivieren*.
+- Unter *Erweiterte Einstellungen*: **Maximales SMB-Protokoll = SMB3**, **Minimales = SMB2**
+  (falls vorhanden). Das Installationsskript findet die passende Version selbst; nur wenn das NAS
+  gar kein SMB2/3 kann, wird das alte, unsichere SMB1 benutzt (dann bitte DSM aktualisieren).
+
+**2. Gemeinsamen Ordner anlegen** (falls noch nicht vorhanden)
+- *Systemsteuerung → Gemeinsamer Ordner → Erstellen*, Name z. B. `Rechnungen`.
+- Unterordner (z. B. `2026-10`, `Firma X`) sind später in der App auswählbar.
+
+**3. Eigenen Benutzer für das Programm anlegen**
+- *Systemsteuerung → Benutzer* (DSM 7: *Benutzer und Gruppe*) *→ Erstellen*, z. B. `rechnungen`
+  mit sicherem Passwort.
+- Bei den Berechtigungen für den Ordner `Rechnungen`: **Lesen/Schreiben** ankreuzen
+  (für Notizen und das Verschieben nach *Bewilligt*/*Abgelehnt*). Andere Ordner: *Kein Zugriff*.
+- Bei den Anwendungen genügt **SMB** (bzw. „Windows-Dateidienst“).
+
+**4. Notieren:** IP-Adresse der Synology (*Systemsteuerung → Netzwerk → Netzwerkschnittstelle*,
+z. B. `192.168.1.10`), Ordnername, Benutzer, Passwort. Am besten der Synology im Router eine feste
+IP-Adresse geben.
+
+---
+
+## A – Ubuntu-Server mit Installationsskript (empfohlen)
+
+Voraussetzung: Ubuntu 20.04 oder neuer, Internetzugang während der Installation, ein Benutzer mit
+`sudo`-Rechten.
+
+**1. Programm auf den Server holen**, z. B.:
+
+```sh
+git clone https://github.com/Bugra-San/Invoice-Tinder.git
+cd Invoice-Tinder
+```
+
+(Ist das Repository privat, fragt `git` nach GitHub-Benutzer und einem Zugangs-Token. Alternativ
+auf GitHub *Code → Download ZIP*, auf den Server kopieren, mit `unzip` entpacken und das Skript mit
+`sudo bash installieren-ubuntu.sh` starten.)
+
+**2. Installationsskript starten:**
+
+```sh
+sudo ./installieren-ubuntu.sh
+```
+
+Das Skript fragt nach IP-Adresse der Synology, Ordnername, Benutzer, Passwort, Port und PIN
+und erledigt dann alles Weitere:
+
+- installiert Docker und die SMB-Werkzeuge,
+- bindet die Synology-Freigabe dauerhaft unter `/mnt/rechnungen` ein und **sucht dabei die
+  passende SMB-Version** (wichtig bei älteren Geräten),
+- **prüft Lesen und Schreiben** auf dem NAS und sagt bei Problemen konkret, woran es liegt
+  (falsches Passwort, Ordner nicht gefunden, NAS nicht erreichbar, fehlende Schreibrechte),
+- installiert das Programm nach `/opt/rechnungs-tinder` und startet es,
+- richtet den Autostart ein: Nach einem Neustart wird erst das NAS eingebunden, dann das Programm
+  gestartet,
+- öffnet bei aktiver Firewall (`ufw`) den Port.
+
+Am Ende zeigt es die Adresse (z. B. `http://192.168.1.20:8765`) und die PIN an. Fertig.
+
+**Aktualisieren:** neue Version holen (`git pull` bzw. neue ZIP) und `sudo ./installieren-ubuntu.sh`
+erneut starten → „Einstellungen übernehmen?“ mit *J* bestätigen.
+
+**Einstellungen ändern** (andere PIN, neues NAS-Passwort, anderer Ordner): Skript erneut starten
+und die Frage nach dem Übernehmen mit *n* beantworten.
+
+**Entfernen:** `sudo ./installieren-ubuntu.sh --entfernen` (die Rechnungen auf dem NAS bleiben
+unangetastet).
+
+**Ohne NAS ausprobieren:** `sudo ./installieren-ubuntu.sh --lokaler-ordner /srv/rechnungen`
+verwendet einen Ordner auf dem Server selbst.
+
+Wo liegt was?
+
+| | |
+|---|---|
+| Programm | `/opt/rechnungs-tinder` |
+| NAS-Zugangsdaten (nur für root lesbar) | `/etc/rechnungs-tinder/nas-zugang` |
+| Antworten der Einrichtung (ohne Passwort) | `/etc/rechnungs-tinder/einrichtung.conf` |
+| Einbindung des NAS | Zeile mit `# rechnungs-tinder` in `/etc/fstab`, Ordner `/mnt/rechnungen` |
+| PIN, Anmeldeschlüssel, „zuletzt verwendet“ | Docker-Volume `rechnungs-tinder_daten` |
+
+### A2 – Ohne Skript, von Hand (für Fachleute)
 
 ```sh
 curl -fsSL https://get.docker.com | sudo sh
-sudo apt install -y cifs-utils     # für die NAS-Einbindung
-```
-
-**2. Programm auf den Server holen** – Repository klonen oder als ZIP herunterladen und entpacken,
-z. B. nach `/opt/rechnungs-tinder`.
-
-**3. Einstellungen festlegen:**
-
-```sh
-cd /opt/rechnungs-tinder
-cp .env.beispiel .env
-nano .env            # PIN, NAS-Adresse, Freigabe, Benutzer, Passwort eintragen
-```
-
-**4. Starten** – die NAS-Freigabe wird dabei direkt vom Container eingebunden:
-
-```sh
+sudo apt install -y cifs-utils
+cp .env.beispiel .env && nano .env      # PIN, NAS_ADRESSE, NAS_FREIGABE, NAS_BENUTZER, NAS_PASSWORT
 sudo docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d --build
 ```
 
-Fertig. Aufruf im Browser: `http://<IP-des-Servers>:8765`
+Hier bindet Docker die Freigabe beim Start des Containers selbst ein. Ist das NAS beim Hochfahren
+des Servers noch nicht erreichbar, startet der Container nicht – deshalb ist das Skript
+(Einbindung über `/etc/fstab` mit Autostart-Reihenfolge) die robustere Wahl.
 
-> **Alternative:** Ist die NAS-Freigabe auf dem Server bereits eingebunden (z. B. über
-> `/etc/fstab` unter `/mnt/nas/rechnungen`), reicht `RECHNUNGEN_ORDNER=/mnt/nas/rechnungen` in der
-> `.env` und der Start mit `sudo docker compose up -d --build`. `PUID`/`PGID` müssen dann zu den
-> Dateirechten dieses Ordners passen (`ls -ln /mnt/nas/rechnungen`).
-
-**Nützliche Befehle** (im Ordner `/opt/rechnungs-tinder`):
+**Nützliche Befehle** (im Ordner `/opt/rechnungs-tinder`, bzw. überall mit
+`--project-directory /opt/rechnungs-tinder`):
 
 | | |
 |---|---|
@@ -66,7 +131,8 @@ Fertig. Aufruf im Browser: `http://<IP-des-Servers>:8765`
 | Protokoll ansehen | `sudo docker compose logs -f` |
 | Neu starten | `sudo docker compose restart` |
 | Stoppen | `sudo docker compose down` |
-| Aktualisieren | neue Version holen (`git pull`), dann den Start-Befehl aus Schritt 4 wiederholen |
+| NAS eingebunden? | `findmnt /mnt/rechnungen` |
+| Aktualisieren | Installationsskript erneut ausführen (siehe oben) |
 
 **Fertiges Image statt selbst bauen:** Bei jedem Push baut GitHub automatisch ein Image
 (`ghcr.io/bugra-san/invoice-tinder`, für normale Server und ARM-NAS). Dafür in
@@ -157,7 +223,11 @@ Die Einstellungen (PIN, zuletzt verwendete Ordner) liegen in
 | Problem | Lösung |
 |---|---|
 | Seite lädt nicht | Läuft der Container (`docker compose ps`)? Firewall/Port 8765 offen? |
-| Im Protokoll „Ordner … nicht erreichbar“ | NAS-Adresse/Freigabe/Benutzer/Passwort in der `.env` prüfen; `cifs-utils` installiert? Bei älteren NAS `SMB_VERSION=2.1` versuchen. |
+| In der App sind keine Rechnungen/Ordner zu sehen | Ist das NAS eingebunden? `findmnt /mnt/rechnungen` – wenn nicht: `sudo mount /mnt/rechnungen` (zeigt die Fehlermeldung) und danach `sudo docker compose --project-directory /opt/rechnungs-tinder restart`. |
+| Skript meldet „Benutzer oder Passwort falsch“ | Benutzer/Passwort auf der Synology prüfen, Berechtigung für den Ordner (Lesen/Schreiben) und für die Anwendung SMB setzen. |
+| Skript meldet „NAS nicht erreichbar“ | IP-Adresse prüfen (`ping 192.168.1.10`), SMB-Dienst auf der Synology aktiviert? Firewall der Synology erlaubt SMB? |
+| Skript meldet „fehlende SMB-Unterstützung im Kernel“ | `sudo apt install linux-modules-extra-$(uname -r)` und Skript erneut starten. |
+| Im Protokoll „Ordner … nicht erreichbar“ (Weg A2) | NAS-Adresse/Freigabe/Benutzer/Passwort in der `.env` prüfen; `cifs-utils` installiert? Bei älteren NAS `SMB_VERSION=2.1` versuchen. |
 | „Keine Berechtigung“ beim Verschieben oder bei Notizen | Der NAS-Benutzer braucht Schreibrechte; `PUID`/`PGID` passend setzen. |
 | Rechnung ist „in einem anderen Programm geöffnet“ | Die PDF am PC schließen und erneut versuchen. |
-| PIN vergessen | Steht in der `.env` (Docker) bzw. in den Argumenten der geplanten Aufgabe (Windows). |
+| PIN vergessen | `sudo cat /etc/rechnungs-tinder/einrichtung.conf` (Weg A), in der `.env` (A2/B) bzw. in den Argumenten der geplanten Aufgabe (Windows). |

@@ -39,9 +39,11 @@ Synology/QNAP-NAS) oder als **RechnungsTinder.exe** (Windows-Server, ohne Python
 Rechnungen kommen direkt aus einem NAS-Ordner; alle Mitarbeiter öffnen das Programm im Browser
 unter `http://<server>:8765` und melden sich mit der PIN an.
 
+Ubuntu-Server mit Rechnungen auf einer Synology (auch ältere Modelle ohne Docker):
+
 ```sh
-cp .env.beispiel .env          # PIN und NAS-Zugang eintragen
-docker compose -f docker-compose.yml -f docker-compose.nas.yml up -d --build
+git clone https://github.com/Bugra-San/Invoice-Tinder.git && cd Invoice-Tinder
+sudo ./installieren-ubuntu.sh    # fragt NAS-Zugang und PIN ab, richtet alles ein
 ```
 
 Schritt-für-Schritt-Anleitung für alle Varianten: **[docs/SERVER.md](docs/SERVER.md)**

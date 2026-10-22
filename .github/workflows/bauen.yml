@@ -21,6 +21,8 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt pytest
       - run: python -m pytest -q
+      - name: Installationsskript prüfen
+        run: shellcheck -S warning -e SC1111 installieren-ubuntu.sh
 
   windows-exe:
     needs: tests
